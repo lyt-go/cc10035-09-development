@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.services.base import BaseModuleService
+from app.services.buffer_flow import buffer_flow
 from app.store import store
 
 CST = timezone(timedelta(hours=8))
@@ -127,6 +128,12 @@ class DataStreamService(BaseModuleService):
             level = "低"
             suggestion = "正常运行"
 
+        seat_state = buffer_flow.snapshot(pipeline_id)
+        if seat_state["available_seats"] == 0 and seat_state["occupied_seats"] > 0:
+            level = "高"
+            suggestion = f"真实队列席位已满，请经边缘缓存转投并释放席位；当前策略:{strategy}"
+            pipe["abnormal"] = True
+
         return {
             "ok": True,
             "pipeline_id": pipeline_id,
@@ -135,6 +142,12 @@ class DataStreamService(BaseModuleService):
             "缓冲总量KB": buffer_size,
             "背压策略": strategy,
             "建议": suggestion,
+            "真实席位容量": seat_state["capacity"],
+            "真实已占席位": seat_state["occupied_seats"],
+            "真实剩余席位": seat_state["available_seats"],
+            "queue_capacity": seat_state["capacity"],
+            "queue_occupied": seat_state["occupied_seats"],
+            "queue_available": seat_state["available_seats"],
         }
 
     def simulate_throughput(self, pipeline_id: str, seconds: int = 60) -> dict[str, Any]:
@@ -200,6 +213,38 @@ class DataStreamService(BaseModuleService):
                 for r in rows
             ],
         }
+
+    # ========== 浏览器受理缓冲流程 ==========
+
+    def submit_inflow_orders(self, pipeline_id: str, orders: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+        """向指定管道提交流入试单，返回逐条接收联单。"""
+        return buffer_flow.accept_orders(pipeline_id, orders, **kwargs)
+
+    accept_inflow_orders = submit_inflow_orders
+
+    def get_buffer_ledger(self, pipeline_id: str | None = None) -> dict[str, Any]:
+        return buffer_flow.ledger(pipeline_id)
+
+    def get_buffer_state(self, pipeline_id: str) -> dict[str, Any]:
+        return buffer_flow.snapshot(pipeline_id)
+
+    def set_buffer_capacity(self, pipeline_id: str, capacity: int | None = None, **kwargs: Any) -> dict[str, Any]:
+        return buffer_flow.set_capacity(pipeline_id, capacity, **kwargs)
+
+    def set_buffer_paused(self, pipeline_id: str, paused: bool | None = None, **kwargs: Any) -> dict[str, Any]:
+        return buffer_flow.set_paused(pipeline_id, paused, **kwargs)
+
+    def recover_accepted_orders(self, pipeline_id: str) -> dict[str, Any]:
+        return buffer_flow.recover_accepted(pipeline_id)
+
+    def retry_pending_orders(self, pipeline_id: str, client_refs: list[str] | None = None, **kwargs: Any) -> dict[str, Any]:
+        return buffer_flow.retry_pending(pipeline_id, client_refs, **kwargs)
+
+    def continue_buffer_flow(self, pipeline_id: str, **kwargs: Any) -> dict[str, Any]:
+        return buffer_flow.continue_flow(pipeline_id, **kwargs)
+
+    def edge_relay_accepted(self, pipeline_id: str, **kwargs: Any) -> dict[str, Any]:
+        return buffer_flow.edge_relay(pipeline_id, **kwargs)
 
     # ========== 跨模块方法 ==========
 

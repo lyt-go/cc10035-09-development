@@ -16,7 +16,8 @@ class Store:
         }
 
     def module_names(self) -> list[str]:
-        return sorted(self._tables)
+        # buffer_* 是受理缓冲流程的内部运行表，不作为18个业务模块展示。
+        return sorted(name for name in self._tables if not name.startswith("buffer_"))
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])

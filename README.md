@@ -69,6 +69,28 @@ npm run dev
 | 数据流管道 | `data_stream` | 流管道 | 管道编号、输入源、处理算子链 |
 | 聚合分发 | `aggregate_sink` | 分发任务 | 任务编号、数据窗口、聚合函数 |
 
+## 浏览器受理缓冲流程
+
+在「数据流管道」或「受理缓冲流程」页面可向指定 `DATA-*` 管道提交单条/批量流入试单。
+接口与页面会返回逐条接收联单，明确 `received`/`retryable`（以及中文「是否已接收」
+「是否可重试」）。只有受理成功的条目会在 `buffer_seats` 中写入占用中的真实队列席位；
+容量不足或暂停时条目只进入待续发列表，不占用席位，也不会出现在下游消费记录中。
+
+同一 `client_ref`（页面上的「试单号/幂等键」）在确认丢失后重提时，只会认领原联单，
+不会新增席位。容量恢复后可先取回已受理方，由边缘缓存按 `accepted_sequence` 顺序转投、
+把下游实际处理结果销回联单并释放席位，再续发容量冲突的条目。
+
+主要接口：
+
+- `GET  /api/data_stream/buffer/ledger?pipeline_id=DATA-0003`
+- `POST /api/data_stream/buffer/accept`
+- `POST /api/data_stream/buffer/capacity`
+- `POST /api/data_stream/buffer/pause`
+- `POST /api/data_stream/buffer/recover`
+- `POST /api/data_stream/buffer/retry`
+- `POST /api/data_stream/buffer/continue`
+- `POST /api/edge_cache/buffer/relay`
+
 ## 约定
 
 - 全部模块共享`frontend/src/views/WorkbenchView.vue|tsx`和一套资源路由。

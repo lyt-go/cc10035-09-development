@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.services.base import BaseModuleService
+from app.services.buffer_flow import buffer_flow
 from app.store import store
 
 CST = timezone(timedelta(hours=8))
@@ -30,6 +31,35 @@ class EdgeCacheService(BaseModuleService):
     STATUS_ORDER = ["草稿", "待验证", "已生效", "已停用"]
     ACTION_RULES = {"提交验证": "待验证", "标记生效": "已生效", "停用配置": "已停用"}
     NEGATIVE_ACTIONS = ["停用配置"]
+
+    # ========== 受理缓冲联单的边缘顺序转投 ==========
+
+    def read_accepted_buffer_entries(self, pipeline_id: str) -> dict[str, Any]:
+        """读取指定管道已受理、具备转投资格的条目（按受理顺序）。"""
+        ledger = buffer_flow.ledger(pipeline_id)
+        return {
+            "ok": True,
+            "pipeline_id": pipeline_id,
+            "items": ledger.get("accepted", []),
+            "read_order": [
+                item.get("client_ref") for item in ledger.get("accepted", [])
+            ],
+        }
+
+    def relay_buffer_receipts(
+        self,
+        pipeline_id: str,
+        config_id: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """按受理顺序转投，并把下游实际处理结果销回接收联单。"""
+        return buffer_flow.edge_relay(
+            pipeline_id,
+            edge_config_id=config_id,
+            limit=limit,
+        )
+
+    forward_accepted_buffer = relay_buffer_receipts
 
     def refresh_cache(self, config_id: str) -> dict[str, Any]:
         """刷新边缘缓存：更新最近刷新时间，检查缓存有效期。
